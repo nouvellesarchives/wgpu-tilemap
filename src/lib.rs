@@ -433,7 +433,7 @@ impl TilemapPipeline {
             });
         let tilemap_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("tilemap_pipeline_layout"),
+                label: Some(&"tilemap_pipeline_layout"),
                 bind_group_layouts: &[
                     &camera_bind_group_layout,
                     &tileset_bind_group_layout,
@@ -446,22 +446,25 @@ impl TilemapPipeline {
             layout: Some(&tilemap_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader_module,
-                entry_point: &"tilemap_vert_main",
+                entry_point: Some(&"tilemap_vert_main"),
                 buffers: &[VERTEX_LAYOUT.clone()],
+                compilation_options: Default::default(),
             },
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil,
             multisample: wgpu::MultisampleState::default(),
             fragment: Some(wgpu::FragmentState {
                 module: &shader_module,
-                entry_point: &"tilemap_frag_main",
+                entry_point: Some(&"tilemap_frag_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: texture_format,
                     blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
+                compilation_options: Default::default(),
             }),
             multiview: None,
+            cache: Default::default(),
         });
         let draw_calls = FirstFitTextureAllocator::new();
         let tilesets = FirstFitTextureAllocator::new();
@@ -563,7 +566,7 @@ impl TilemapPipeline {
                     self.active_tilesets
                         .push(((tileset.pixel_size, tileset.size_of_tile), i as u32));
                     let texture_data = &tileset.data;
-                    let idl = wgpu::ImageDataLayout {
+                    let idl = wgpu::TexelCopyBufferLayout {
                         offset: 0,
                         bytes_per_row: Some(4 * tileset.size_of_tile.x),
                         rows_per_image: Some(tileset.size_of_tile.y),
@@ -574,7 +577,7 @@ impl TilemapPipeline {
                         depth_or_array_layers: tile_size.x * tile_size.y,
                     };
                     queue.write_texture(
-                        wgpu::ImageCopyTexture {
+                        wgpu::TexelCopyTextureInfo {
                             texture: &datum.texture(),
                             mip_level: 0,
                             origin: wgpu::Origin3d::ZERO,
@@ -631,14 +634,14 @@ impl TilemapPipeline {
                     call.tilesets_index = self.active_tilesets[*tileset as usize];
                     let texture_data = &tilemap.data;
                     queue.write_texture(
-                        wgpu::ImageCopyTexture {
+                        wgpu::TexelCopyTextureInfo {
                             texture: &call.texture(),
                             mip_level: 0,
                             origin: wgpu::Origin3d::ZERO,
                             aspect: wgpu::TextureAspect::All,
                         },
                         bytemuck::cast_slice::<u8, u8>(texture_data.as_ref()),
-                        wgpu::ImageDataLayout {
+                        wgpu::TexelCopyBufferLayout {
                             offset: 0,
                             bytes_per_row: Some(size.x),
                             rows_per_image: Some(size.y),
@@ -743,7 +746,14 @@ impl TilemapPipeline {
         for (_sz, calls) in self.draw_calls.map.iter() {
             for call in calls.iter() {
                 if call.active {
-                    let Some(tilesets_bg) = self.tilesets.map.get(&call.tilesets_index.0).and_then(|v| v.get(call.tilesets_index.1 as usize)) else { continue };
+                    let Some(tilesets_bg) = self
+                        .tilesets
+                        .map
+                        .get(&call.tilesets_index.0)
+                        .and_then(|v| v.get(call.tilesets_index.1 as usize))
+                    else {
+                        continue;
+                    };
                     gpu_profiler.begin_scope("tilemap_draw", rpass, device);
                     rpass.set_bind_group(1, &tilesets_bg.bind_group, &[]);
                     rpass.set_bind_group(2, &call.bind_group, &[]);
